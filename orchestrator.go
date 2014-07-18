@@ -8,37 +8,91 @@ import (
 )
 
 type Service struct {
-    Name string
+    Id string
     DockerImage string
-    Inputs map[string]string
-    // Outputs map[string]string
+    Inputs map[string]map[string]string
 }
 
-// go run orchestrator.go "[{\"name\":\"service1\",\"DockerImage\":\"cloudspace/url-lengthener-go\",\"Inputs\":{\"url\":\"http://google.com\"},\"Outputs\":{\"url\":\"\"}},{\"name\":\"service1\",\"DockerImage\":\"cloudspace/url-lengthener-go\",\"Inputs\":{\"url\":\"http://google.com\"},\"Outputs\":{\"url\":\"\"}}]"
+// go run orchestrator.go "[{\"id\":\"1\",\"dockerImage\":\"cloudspace/url-lengthener-go\",\"inputs\":{\"url\":{\"service\":\"input\",\"key\":\"url\"}}},{\"id\":\"2\",\"dockerImage\":\"cloudspace/utm-stripper-go\",\"inputs\":{\"url\":{\"service\":\"1\",\"key\":\"url\"}}}]" "{\"url\":\"http://t.co/wnpJFiP7ls\"}"
 
 func main() {
     var flow []Service
-    arguments := os.Args[1]
-    fmt.Println("ARGUMENTS:", arguments)
+    orchestrationSpecJSON := os.Args[1]
+    fmt.Println("ORCHESTRATION:", orchestrationSpecJSON)
 
-    input := []byte(arguments)
+    // parse the orchestration JSON
+    orchestrationSpec := []byte(orchestrationSpecJSON)
 
-    err := json.Unmarshal(input, &flow)
-    if err != nil {
-        fmt.Println(err)
+    err1 := json.Unmarshal(orchestrationSpec, &flow)
+    if err1 != nil {
+        fmt.Println(err1)
         return
     }
 
-    fmt.Println("%+v", flow)
+    fmt.Println("FLOW:\n")
+    fmt.Printf("%+v", flow)
+    fmt.Println("\n")
 
-    c := make(chan string)
+    // parse user input
+    fmt.Println("PARSING OPTIONS JSON")
+
+    var options map[string]string
+    optionsJSON := os.Args[2]
+    fmt.Println("RAW OPTIONS:", optionsJSON)
+
+    optionsBytes := []byte(optionsJSON)
+
+    err2 := json.Unmarshal(optionsBytes, &options)
+    if err2 != nil {
+        fmt.Println(err2)
+        return
+    }
+
+    fmt.Println("PARSED OPTIONS:")
+    fmt.Printf("%+v", options)
+    fmt.Println("\n")
+
+    var user_input map[string]map[string]string
+
+    // prelaunch
+    var outputs map[string]map[string]chan string
+
+    // outputs["0"] := map[string]chan
+
+    for key, input := range options {
+        chn := make(chan string, 1)
+        chn <- input
+        outputs["0"][key] = chn
+    }
+ 
+    /////////////////////////////////////////////////////
+    fmt.Println("RUNNING...")
+
+    output := user_input
+    for index, service := range flow {
+        var input map[string]chan string
+        for key,value := range service.Inputs {
+            input[key] = outputs[value["service"]][value["key"]]
+        }
+
+        outputs[service.Id] = runService(input, service.DockerImage)
+
+        output = runService(output, service.DockerImage)
+        fmt.Println("ID:",service.Id)
+    }
+
+
+    // c := make(chan string)
     
-    out := runService(c, flow[0].DockerImage)
-    c <- flow[0].Inputs["url"]
-    fmt.Printf("%s", <-out)
+    // out := runService(c, flow[0].DockerImage)
+    
+    // fmt.Println("HELLO:",flow[0].Inputs["url"]["key"], "\n")
+
+    // c <- flow[0].Inputs["url"]["key"]
+    // fmt.Printf("%s", <-out)
 }
 
-func runService(arg1 <-chan string, dockerImage string) <-chan string {
+func runService(inputs map[string]chan string, dockerImage string) <-chan string {
     result := make(chan string)
     go func() {
         args := <-arg1
