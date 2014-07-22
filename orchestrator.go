@@ -1,10 +1,12 @@
 package main
 
 import (
-    "fmt"
+    // "fmt"
+    "bytes"
     "os"
     "os/exec"
     "encoding/json"
+    "log"
 )
 
 type Service struct {
@@ -18,46 +20,40 @@ type Service struct {
 
 
 func main() {
+    var buf bytes.Buffer
+    logger := log.New(&buf, "logger: ", log.Lshortfile)
+
     var flow []Service
     orchestrationSpecJSON := os.Args[1]
-    fmt.Println("ORCHESTRATION:", orchestrationSpecJSON)
+    logger.Println("ORCHESTRATION:", orchestrationSpecJSON)
 
     // parse the orchestration JSON
     orchestrationSpec := []byte(orchestrationSpecJSON)
-
     err1 := json.Unmarshal(orchestrationSpec, &flow)
     if err1 != nil {
-        fmt.Println(err1)
+        logger.Println(err1)
         return
     }
-
-    fmt.Println("FLOW:\n")
-    fmt.Printf("%+v", flow)
-    fmt.Println("\n")
+    logger.Printf("FLOW: %+v\n", flow)
 
     // parse user input
-    fmt.Println("PARSING OPTIONS JSON")
+    logger.Println("PARSING OPTIONS JSON")
 
     var options map[string]string
     optionsJSON := os.Args[2]
-    fmt.Println("RAW OPTIONS:", optionsJSON)
+    logger.Println("RAW OPTIONS:", optionsJSON)
 
     optionsBytes := []byte(optionsJSON)
 
     err2 := json.Unmarshal(optionsBytes, &options)
     if err2 != nil {
-        fmt.Println(err2)
+        logger.Println(err2)
         return
     }
-
-    fmt.Println("PARSED OPTIONS:")
-    fmt.Printf("%+v", options)
-    fmt.Println("\n")
+    logger.Printf("PARSED OPTIONS: %+v\n", options)
 
     // prelaunch
     outputs := make(map[string]map[string]chan string)
-
-    // outputs["0"] := map[string]chan
 
     user_input := make(map[string]chan string)
     for key, input := range options {
@@ -68,7 +64,7 @@ func main() {
     outputs["input"] = user_input
 
     /////////////////////////////////////////////////////
-    fmt.Println("RUNNING...")
+    logger.Println("RUNNING...")
 
     for _, service := range flow {
         input := make(map[string]chan string)
@@ -76,39 +72,47 @@ func main() {
             input[key] = outputs[value["service"]][value["key"]]
         }
 
-        outputs[service.Id] = runService(input, service)
+        outputs[service.Id] = runService(input, service, logger)
 
-        // output = runService(output, service.DockerImage)
-        fmt.Println("ID:",service.Id)
+        logger.Println("ID:",service.Id)
     }
-    fmt.Println(<- outputs["2"]["url"])
 
+    // Output results from final service as json
+    enc := json.NewEncoder(os.Stdout)
+    for k, v := range outputs[flow[len(flow)-1].Id] {
+      enc.Encode(map[string]string{k: <-v})
+    }
+
+
+    // // fmt.Println(k, <-v)
+    // jsn, _ := json.Marshal([]string{k, <-v})
+    // fmt.Println(string(jsn))
+    // fmt.Println(<- outputs[flow[len(flow)-1].Id]["url"])
+    // fmt.Print(&buf) // Uncomment to view logger output
 }
 
-func runService(inputs map[string]chan string, service Service) map[string]chan string {
+func runService(inputs map[string]chan string, service Service, logger *log.Logger) map[string]chan string {
     result := make(map[string]chan string)
     for _, key := range service.Outputs {
       result[key] = make(chan string, 1)
     }
     go func() {
-        fmt.Println(service.Id)
+        logger.Println(service.Id)
         args := <-inputs["url"]
-        fmt.Println(service.Id, args)
+        logger.Println(service.Id, args)
         out, err := exec.Command("docker", "run", service.DockerImage, args).Output()
-
-        fmt.Println(out)
-
         if err != nil {
-            fmt.Println("ERROR:")
-            fmt.Println(err)
+            logger.Println("ERROR: %s", err)
             return
         }
+        logger.Println(out)
+
         var dat map[string]string
         if err := json.Unmarshal([]byte(out), &dat); err != nil {
           panic(err)
         }
         for key, value := range dat {
-          fmt.Println(service.Id, key, value)
+          logger.Println(service.Id, key, value)
           result[key] <- value
         }
     }()
