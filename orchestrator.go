@@ -14,7 +14,8 @@ type Service struct {
     Outputs []string
 }
 
-// go run orchestrator.go "[{\"id\":\"1\",\"dockerImage\":\"cloudspace/url-lengthener-go\",\"inputs\":{\"url\":{\"service\":\"input\",\"key\":\"url\"}}},{\"id\":\"2\",\"dockerImage\":\"cloudspace/utm-stripper-go\",\"inputs\":{\"url\":{\"service\":\"1\",\"key\":\"url\"}}}]" "{\"url\":\"http://t.co/wnpJFiP7ls\"}"
+// go run orchestrator.go "[{\"id\":\"1\",\"dockerImage\":\"cloudspace/url-lengthener-go\",\"inputs\":{\"url\":{\"service\":\"input\",\"key\":\"url\"}},\"outputs\":[\"url\"]},{\"id\":\"2\",\"dockerImage\":\"cloudspace/utm-stripper-go\",\"inputs\":{\"url\":{\"service\":\"1\",\"key\":\"url\"}},\"outputs\":[\"url\"]}]" "{\"url\":\"http://t.co/wnpJFiP7ls\"}"
+
 
 func main() {
     var flow []Service
